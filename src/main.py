@@ -5,6 +5,7 @@ from tkinter import filedialog
 import tkinter.font as font
 import tkinter as tk
 import numpy as np
+import subprocess
 import threading
 import serial
 import time
@@ -334,10 +335,10 @@ class CapGui:
         self.p_entry = ClampedEntry(self.stitch_frame, init_val=15, min_val=5, max_val=95, type_val=int,
                                     command=self.update_grid_size)
         self.p_entry.grid(row=1, column=1, **kwargs)
-        self.x_entry = ClampedEntry(self.stitch_frame, init_val=4, min_val=1, max_val=9, type_val=int,
+        self.x_entry = ClampedEntry(self.stitch_frame, init_val=3, min_val=1, max_val=9, type_val=int,
                                     command=self.update_grid_size)
         self.x_entry.grid(row=1, column=3, **kwargs)
-        self.y_entry = ClampedEntry(self.stitch_frame, init_val=4, min_val=1, max_val=9, type_val=int,
+        self.y_entry = ClampedEntry(self.stitch_frame, init_val=3, min_val=1, max_val=9, type_val=int,
                                     command=self.update_grid_size)
         self.y_entry.grid(row=1, column=5, **kwargs)
         # go button
@@ -511,6 +512,10 @@ class CapGui:
                 send("move %s, %s" % ("xy"[f], moves[f]))
 
     def move_abs(self, x, y):
+        if x < 0 or 1 < x:
+            return
+        if y < 0 or 1 < y:
+            return
         if self.iv != 1:
             x = 1 - x
             y = 1 - y
@@ -600,9 +605,10 @@ class CapGui:
 
     def zig_zag_wait(self):
         self.gridlock = True
-        new_dir = os.path.join(self.cwd, time.strftime("macro %Y%m%d_%H%M%S"))
+        new_dir = os.path.join(self.cwd, time.strftime("macro_%Y%m%d_%H%M%S"))
         os.makedirs(new_dir)
         script = HEADER
+        script_lines = []
         num_len = len(str(self.grid_size[0] * self.grid_size[1]))
         coords = (0, 0)
         direction = (1, 0)
@@ -610,10 +616,10 @@ class CapGui:
             self.move_on_grid(coords)
             time.sleep(0.2)
             image = np.flip(np.array(self.preview.get_image()), 2)
-            name = "image %s.png" % str(f).zfill(num_len)
+            name = "tile_%s.png" % str(f).zfill(num_len)
             cv2.imwrite(os.path.join(new_dir, name), image)
-            script += "%s; ; (%s, %s)\n" % (name, 1280 * coords[0] * (100 - self.grid_p) // 100,
-                                            720 * (self.grid_size[1] - coords[1] - 1) * (100 - self.grid_p) // 100)
+            script_lines.append((name, 1280 * coords[0] * (100 - self.grid_p) // 100,
+                                       720 * (self.grid_size[1] - coords[1] - 1) * (100 - self.grid_p) // 100))
             if direction[1]:
                 if coords[0]:
                     direction = (-1, 0)
@@ -623,8 +629,13 @@ class CapGui:
                 direction = (0, 1)
             self.done_cells.append(coords)
             coords = (coords[0] + direction[0], coords[1] + direction[1])
+        script_lines.sort(key=lambda x: x[::-1])
+        script += '\n'.join("%s; ; (%s.0, %s.0)" % f for f in script_lines)
+        file = open(os.path.join(new_dir, "TileConfiguration.txt"), 'w')
+        file.write(script)
+        file.close()
+        subprocess.call("imagej\\ImageJ-win32.exe --headless --console --run \"imagej/macros/stage_stitching.ijm\" \"inDir='%s',outDir='%s'\"" % (new_dir, new_dir))
         self.done_cells = []
-        print(script)
         self.gridlock = False
 
     def show(self):
