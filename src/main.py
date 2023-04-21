@@ -635,6 +635,7 @@ class CapGui:
         file.write(script)
         file.close()
         subprocess.call("imagej\\ImageJ-win32.exe --headless --console --run \"imagej/macros/stage_stitching.ijm\" \"inDir='%s',outDir='%s'\"" % (new_dir, new_dir))
+        subprocess.call("start %s" % os.path.join(new_dir, "output.png"))
         self.done_cells = []
         self.gridlock = False
 
